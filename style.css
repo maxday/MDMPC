@@ -1,0 +1,23 @@
+body {
+	padding : 50px;
+}
+	
+.breadCrumbItem {
+	width : 400px;
+	display : block;
+	font-size : 15px;
+	margin-bottom : 3px;
+	padding : 15px;
+}
+
+.breadCrumbPercent {
+	float : right;
+}
+
+#breadCrumbs {
+	padding-left : 10px;
+	float : left;
+}
+#MDMultiplePieChart {
+	float : left;	
+}
