@@ -25,66 +25,69 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-var alreadyDrawnSlices = new Array();
 var width = 1000;
-var nbLevels = drillDown(data);
-var maxCarLength = 32;
+var maxCarLength = 60;
 
-//some convertion function
-function toRad(angle) {
-	return angle*Math.PI/180;
+var myTab = new Array();
+
+function getXCoordinateFromAngle(angle, radius) {
+	return Math.cos(angle*Math.PI/180) * radius;
 }
 
-function getXFromAngle(angle, radius) {
- return Math.cos(toRad(angle)) * radius;
+function getYCoordinateFromAngle(angle, radius) {
+	return Math.sin(angle*Math.PI/180) * radius;
 }
 
-function getYFromAngle(angle, radius) {
- return Math.sin(toRad(angle)) * radius;
-}
-
-//get the SVG center 
-//@TODO : make it dynamic
-function getCenter() {
-	return (width)/2;
-}
-
-//compute the sum for each nodes
-//@todo refacto to parse just once
+//compute the value for each slice and return the amount of levels
 function computeAnglesAndAddThemToPath(data) {
     var summedAngles = 0;
+    var max = 0;
+
     if(typeof data.category != "undefined") {
         for(var i=0; i<data.category.length; ++i) {
-			summedAngles  = summedAngles + parseInt(data.category[i].value);
-            computeAnglesAndAddThemToPath(data.category[i]);    
+        	max = Math.max(1+computeAnglesAndAddThemToPath(data.category[i]));
+            summedAngles  = summedAngles + parseInt(data.category[i].value);
         }
-		data.sum = summedAngles;
+		data.value = summedAngles;
+		return max;
     }
+    return 0;
 }
 
+function draw(bigData, idx, levelNumber, parentId) {
 
+	idx = typeof idx !== 'undefined' ? idx : 0;
+	levelNumber = typeof levelNumber !== 'undefined' ? levelNumber : 0;
+	parentId = typeof parentId !== 'undefined' ? parentId : 0;
 
-computeAnglesAndAddThemToPath(data.category[0]);
+	var currentData;
 
+	if(typeof bigData.category != "undefined") {
+		currentData = bigData.category[idx];
+	}
 
-
-drawDataAndDisplaySum(data.category[0], 1, 360, 360, 0, alreadyDrawnSlices);
-
-
-//feed the alreadyDrawn table 
-function drawDataAndDisplaySum(data, sum, previousLevelValue, previousAngle, rank, alreadyDrawnSlices, parentId) {
-    if(typeof alreadyDrawnSlices[rank] == "undefined") {
-        alreadyDrawnSlices.push(0);
+	if(typeof myTab[levelNumber] == "undefined") {
+        myTab.push(0);
     }
-    var newId = performDrawSlice(rank, data.value, alreadyDrawnSlices[rank], (360*(data.value/sum)*previousAngle/360), data.color, data.label, parentId);
-    alreadyDrawnSlices[rank]+= (360*(data.value/sum)*previousAngle/360); 
-    if(typeof data.category != "undefined") {
-		var stepColor = 1/data.category.length;
-        for(var i=0; i<data.category.length; ++i) {
-			if(typeof data.category[i].color == "undefined") {
-				data.category[i].color = lightColor(data.color, ((i+1) * stepColor));	
-			}		
-            drawDataAndDisplaySum(data.category[i], data.sum, 360*data.value/sum, (360*data.value/sum)*previousLevelValue/360, rank+1, alreadyDrawnSlices, newId);    
+	
+	if(typeof bigData.category != "undefined") {
+
+		if(typeof bigData.value != "undefined")
+			currentData.ratio = (currentData.value/bigData.value)*bigData.ratio;
+		else 
+			currentData.ratio = 1;
+
+		var newId = drawSlice(levelNumber, currentData.value, 360*myTab[levelNumber], 360*currentData.ratio, currentData.color, currentData.label, parentId);
+		myTab[levelNumber] = myTab[levelNumber] + currentData.ratio;
+	}
+
+    if(typeof currentData.category != "undefined") {
+    	var stepColor = 1/currentData.category.length;
+        for(var i=0; i<currentData.category.length; ++i) {
+            if(typeof currentData.category[i].color == "undefined") {
+				currentData.category[i].color = lightColor(currentData.color, ((i+1) * stepColor));	
+			}	
+			draw (currentData, i, levelNumber+1, newId);   
         }
     }   
 }
@@ -98,7 +101,6 @@ function getRadius(width, level, totalLevel, isSmall) {
 		return step * (level+1);
 	}
 	
-	
 	//big
 	var min = width / 4;
 	var scale = width - min;
@@ -109,7 +111,6 @@ function getRadius(width, level, totalLevel, isSmall) {
 
 
 function sliceSize() {
-	
 	var maxSize = (width/2) * 90 / 100;
 	var minSize = (width/2) * 10 / 100;
 	
@@ -128,32 +129,36 @@ function getBigRadius(level) {
 
 
 //get the svg path from a slice
-function getStringPath(slice) {
-	return " M "+slice.startPointInside.xCoordinate+","+slice.startPointInside.yCoordinate+
-			" A "+getSmallRadius(slice.level)+","+getSmallRadius(slice.level)+" 0 "+slice.flagInside.largeArcFlag+","+slice.flagInside.sweepFlag+" "+slice.endPointInside.xCoordinate+","+slice.endPointInside.yCoordinate+
-			" L "+slice.endPointOutside.xCoordinate+","+slice.endPointOutside.yCoordinate+
-			" A "+getBigRadius(slice.level)+","+getBigRadius(slice.level)+" 0 "+slice.flagOutside.largeArcFlag+","+slice.flagOutside.sweepFlag+" "+slice.startPointOutside.xCoordinate+","+slice.startPointOutside.yCoordinate;					   
+function buildStringPath(slice) {
+	return " M " + slice.startPointInside.xCoordinate + "," + slice.startPointInside.yCoordinate +
+		  	" A " + getSmallRadius(slice.level) + "," + getSmallRadius(slice.level) + 
+		  	" 0 " + slice.flagInside.largeArcFlag + "," + slice.flagInside.sweepFlag + " " + slice.endPointInside.xCoordinate + 
+		  	"," + slice.endPointInside.yCoordinate +
+			" L " + slice.endPointOutside.xCoordinate + "," + slice.endPointOutside.yCoordinate +
+			" A " + getBigRadius(slice.level) + "," + getBigRadius(slice.level) + 
+			" 0 " + slice.flagOutside.largeArcFlag + "," + slice.flagOutside.sweepFlag + " " + slice.startPointOutside.xCoordinate + 
+			"," + slice.startPointOutside.yCoordinate;					   
 }
 
 
 //draw and add the slice to the svg
-function performDrawSlice(level, realValue, angleStart, angleValue, color, label, parentId) {
-    
-	//@todo fix this ugly hack
+function drawSlice(level, realValue, angleStart, angleValue, color, label, parentId) {
+
+	//@todo fix this ugly hack ask stackoverflow
 	if(angleValue == 360)
 		angleValue = 359.99;
 	
-	var center = getCenter();
+	var center = width/2;
     
-	var startPointInside = new Point(center + getXFromAngle(angleStart, getSmallRadius(level)), center - getYFromAngle(angleStart, getSmallRadius(level)));
-	var startPointOutside = new Point(center + getXFromAngle(angleStart, getBigRadius(level)), center - getYFromAngle(angleStart, getBigRadius(level)));
+	var startPointInside = new Point(center + getXCoordinateFromAngle(angleStart, getSmallRadius(level)), center - getYCoordinateFromAngle(angleStart, getSmallRadius(level)));
+	var startPointOutside = new Point(center + getXCoordinateFromAngle(angleStart, getBigRadius(level)), center - getYCoordinateFromAngle(angleStart, getBigRadius(level)));
 	
-	var endPointInside = new Point(center + getXFromAngle(angleStart+angleValue, getSmallRadius(level)), center - getYFromAngle(angleStart+angleValue, getSmallRadius(level)));
-	var endPointOutside = new Point(center + getXFromAngle(angleStart+angleValue, getBigRadius(level)), center - getYFromAngle(angleStart+angleValue, getBigRadius(level)))
+	var endPointInside = new Point(center + getXCoordinateFromAngle(angleStart+angleValue, getSmallRadius(level)), center - getYCoordinateFromAngle(angleStart+angleValue, getSmallRadius(level)));
+	var endPointOutside = new Point(center + getXCoordinateFromAngle(angleStart+angleValue, getBigRadius(level)), center - getYCoordinateFromAngle(angleStart+angleValue, getBigRadius(level)))
 	
 	var currentComputedId = "pathIdD"+Math.random();
 	
-	newPath = document.createElementNS("http://www.w3.org/2000/svg","path");
+	var newPath = document.createElementNS("http://www.w3.org/2000/svg","path");
 	
 	newPath.setAttributeNS(null, "id", currentComputedId);
 	
@@ -171,7 +176,7 @@ function performDrawSlice(level, realValue, angleStart, angleValue, color, label
 	
 	var slice = new Slice(startPointInside, endPointInside, insideFlag, startPointOutside, endPointOutside, outsideFlag, level);
 
-	newPath.setAttributeNS(null, "d", getStringPath(slice));			
+	newPath.setAttributeNS(null, "d", buildStringPath(slice));			
     newPath.setAttributeNS(null, "stroke", color);
     newPath.setAttributeNS(null, "stroke-width", 1);
     newPath.setAttributeNS(null, "opacity", 1);
@@ -194,7 +199,7 @@ function performDrawSlice(level, realValue, angleStart, angleValue, color, label
 }
 
 
-//handler on aslice
+//handler on a slice
 function showSliceInfoIn(e) {
     //console.log(e.target.getAttributeNS(null, "valueLabel") + " - " + e.target.getAttributeNS(null, "valueAngle"));
 	findPathFromSliceIdAndSetOpacity(e.target.getAttributeNS(null, "id"), 0.5);
@@ -233,8 +238,7 @@ function showSliceInfoIn(e) {
 //hander on mouseOut
 function showSliceInfoOut(e) {
 	findPathFromSliceIdAndSetOpacity(e.target.getAttributeNS(null, "id"), 1);
-	var breadDiv = document.getElementById("breadCrumbs");
-	breadDiv.innerHTML = "";
+	document.getElementById("breadCrumbs").innerHTML = "";
 }
 
 //util function to handle opacity
@@ -283,7 +287,7 @@ function SliceInfo(angle, label, realValue, parent) {
 	this.parent = parent;
 }
 
-//class point @todo refacto the nameWhichAreFarToooooooLong
+//class point
 function Point(xCoordinate, yCoordinate) {
 	this.xCoordinate = xCoordinate;
 	this.yCoordinate = yCoordinate;
@@ -300,8 +304,10 @@ function constructBreadCrumbs(sliceId) {
 		var slice = document.getElementById(currentSelectedSliceId);
 		
 		var label = slice.getAttribute("valueLabel");
-		if(label.length > maxCarLength)
-		label =  label.substring(0,maxCarLength) + "...";
+
+		if(label.length > maxCarLength) {
+			label =  label.substring(0,maxCarLength) + "...";	
+		}
 		
 		var breadCrumbItem = new BreadCrumbItem(slice.getAttribute("fill"), label, slice.getAttribute("valueAngle"), slice.getAttribute("valueReal"));
 		breadCrumbs.push(breadCrumbItem);
@@ -312,16 +318,9 @@ function constructBreadCrumbs(sliceId) {
 }
 
 
+var nbLevels = computeAnglesAndAddThemToPath(data.category[0]) + 1;
 
 
+draw(data);
 
-function drillDown(data) {
-    var max = 0;
-    if(typeof data.category != "undefined") {
-        for(var i=0; i<data.category.length; ++i) {
-			max = Math.max(1+drillDown(data.category[i]), max);
-        }
-        return max;
-    }
-    return 0;
-}
+
